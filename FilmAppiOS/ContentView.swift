@@ -8,14 +8,50 @@ private enum AppTab: Hashable {
     case settings
 }
 
+private enum FilmistDates {
+    private static let isoFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    static func string(from date: Date) -> String {
+        isoFormatter.string(from: date)
+    }
+
+    static func date(from string: String) -> Date {
+        isoFormatter.date(from: string) ?? Date()
+    }
+
+    static func displayString(from dateString: String) -> String {
+        guard let date = isoFormatter.date(from: dateString) else {
+            return dateString
+        }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    static func displayString(from date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    static func displayStringWithTime(from date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var store: FilmLogStore
     @State private var selectedTab: AppTab = .workflow(.unloaded)
+    @State private var showAddMenu = false
     @State private var showAddFilm = false
+    @State private var showAddCamera = false
     @State private var loadingRoll: RollSummary?
     @State private var finishingRoll: RollSummary?
     @State private var processingRoll: RollSummary?
     @State private var deletingRoll: RollSummary?
+    @State private var editingStock: FilmStock?
 
     var body: some View {
         NavigationStack {
@@ -27,7 +63,8 @@ struct ContentView: View {
                             loadingRoll: $loadingRoll,
                             finishingRoll: $finishingRoll,
                             processingRoll: $processingRoll,
-                            deletingRoll: $deletingRoll
+                            deletingRoll: $deletingRoll,
+                            editingStock: $editingStock
                         )
                         .tag(AppTab.workflow(page))
                         .tabItem {
@@ -39,30 +76,45 @@ struct ContentView: View {
                     BackupView()
                         .tag(AppTab.settings)
                         .tabItem {
-                            Label("Settings", systemImage: "externaldrive")
+                            Label("Settings", systemImage: "gearshape")
                         }
                 }
 
-                if case .workflow = selectedTab {
-                    Button {
-                        showAddFilm = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.title2.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 58, height: 58)
-                            .background(Circle().fill(Color.accentColor))
-                            .shadow(radius: 10, y: 4)
+                if showAddMenu {
+                    AddMenuBackdrop {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                            showAddMenu = false
+                        }
                     }
-                    .accessibilityLabel("Add film stock")
-                    .padding(.trailing, 22)
-                    .padding(.bottom, 64)
+                    .transition(.opacity)
+                    .zIndex(1)
                 }
+
+                AddMenu(
+                    isPresented: $showAddMenu,
+                    onAddFilm: {
+                        showAddFilm = true
+                    },
+                    onAddCamera: {
+                        showAddCamera = true
+                    }
+                )
+                .padding(.trailing, 22)
+                .padding(.bottom, 64)
+                .zIndex(2)
             }
-            .navigationTitle("Film Log")
+            .navigationTitle("Filmist")
         }
         .sheet(isPresented: $showAddFilm) {
             AddFilmSheet()
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showAddCamera) {
+            AddCameraSheet()
+                .environmentObject(store)
+        }
+        .sheet(item: $editingStock) { stock in
+            EditFilmSheet(stock: stock)
                 .environmentObject(store)
         }
         .sheet(item: $loadingRoll) { summary in
@@ -101,6 +153,107 @@ struct ContentView: View {
     }
 }
 
+private struct AddMenuBackdrop: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .ignoresSafeArea()
+            .overlay(Color.black.opacity(0.12).ignoresSafeArea())
+            .onTapGesture(perform: onDismiss)
+    }
+}
+
+private struct AddMenu: View {
+    @Binding var isPresented: Bool
+    let onAddFilm: () -> Void
+    let onAddCamera: () -> Void
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 12) {
+            if isPresented {
+                AddMenuAction(
+                    title: "Film stock",
+                    systemImage: "film",
+                    delay: 0.04
+                ) {
+                    choose(onAddFilm)
+                }
+
+                AddMenuAction(
+                    title: "Camera",
+                    systemImage: "camera",
+                    delay: 0.0
+                ) {
+                    choose(onAddCamera)
+                }
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    isPresented.toggle()
+                }
+            } label: {
+                Image(systemName: "plus")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .rotationEffect(.degrees(isPresented ? 45 : 0))
+                    .frame(width: 58, height: 58)
+                    .background(Circle().fill(Color.accentColor))
+                    .shadow(radius: isPresented ? 16 : 10, y: isPresented ? 8 : 4)
+            }
+            .accessibilityLabel(isPresented ? "Close add menu" : "Add")
+        }
+    }
+
+    private func choose(_ action: @escaping () -> Void) {
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.88)) {
+            isPresented = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            action()
+        }
+    }
+}
+
+private struct AddMenuAction: View {
+    let title: String
+    let systemImage: String
+    let delay: Double
+    let action: () -> Void
+
+    @State private var isVisible = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: systemImage)
+                    .font(.headline)
+                    .frame(width: 34, height: 34)
+                    .background(Color.accentColor.opacity(0.14), in: Circle())
+            }
+            .foregroundStyle(.primary)
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .padding(.vertical, 8)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.14), radius: 14, y: 7)
+        }
+        .buttonStyle(.plain)
+        .opacity(isVisible ? 1 : 0)
+        .scaleEffect(isVisible ? 1 : 0.86, anchor: .bottomTrailing)
+        .offset(y: isVisible ? 0 : 14)
+        .onAppear {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.78).delay(delay)) {
+                isVisible = true
+            }
+        }
+    }
+}
+
 private struct WorkflowList: View {
     @EnvironmentObject private var store: FilmLogStore
     let page: WorkflowPage
@@ -108,6 +261,7 @@ private struct WorkflowList: View {
     @Binding var finishingRoll: RollSummary?
     @Binding var processingRoll: RollSummary?
     @Binding var deletingRoll: RollSummary?
+    @Binding var editingStock: FilmStock?
 
     var body: some View {
         let rolls = store.rollSummaries(for: page)
@@ -134,6 +288,7 @@ private struct WorkflowList: View {
                                 onLoad: { loadingRoll = summary },
                                 onFinish: { finishingRoll = summary },
                                 onProcess: { processingRoll = summary },
+                                onEdit: { editingStock = summary.stock },
                                 onDelete: { deletingRoll = summary }
                             )
                         }
@@ -152,17 +307,71 @@ private struct BackupView: View {
     @EnvironmentObject private var store: FilmLogStore
     @State private var message = ""
     @State private var backupDocument = FilmLogBackupDocument()
+    @State private var isWorking = false
     @State private var showExporter = false
     @State private var showImporter = false
+    @State private var showICloudRestoreConfirmation = false
 
     var body: some View {
         List {
             Section {
-                Label("No Apple iCloud capability required", systemImage: "checkmark.circle")
+                if store.cameras.isEmpty {
+                    Text("No saved cameras")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(store.cameras) { camera in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(camera.cameraBody)
+                            Text(camera.lens)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .onDelete { indexSet in
+                        let cameras = store.cameras
+                        for index in indexSet {
+                            store.deleteCamera(cameras[index].id)
+                        }
+                    }
+                }
             } header: {
-                Text("Backup")
+                Text("Cameras")
             } footer: {
-                Text("Export creates one backup file containing the film log, logos, and attached photos. Save it to iCloud Drive, Files, AirDrop, or another location.")
+                Text("Saved cameras can be selected when loading a roll.")
+            }
+
+            Section {
+                Label(
+                    store.isICloudAvailable ? "iCloud is available" : "iCloud is not available",
+                    systemImage: store.isICloudAvailable ? "checkmark.icloud" : "exclamationmark.icloud"
+                )
+                .foregroundStyle(store.isICloudAvailable ? .primary : .secondary)
+
+                if let backupDate = store.iCloudBackupDate {
+                    LabeledContent("Last backup", value: FilmistDates.displayStringWithTime(from: backupDate))
+                } else {
+                    LabeledContent("Last backup", value: "None")
+                }
+            } header: {
+                Text("iCloud Backup")
+            } footer: {
+                Text("iCloud backup saves the film log, logos, and attached photos to the app's private iCloud Drive container.")
+            }
+
+            Section {
+                Button {
+                    backUpToICloud()
+                } label: {
+                    Label("Back Up to iCloud", systemImage: "icloud.and.arrow.up")
+                }
+                .disabled(isWorking)
+
+                Button {
+                    showICloudRestoreConfirmation = true
+                } label: {
+                    Label("Restore From iCloud", systemImage: "icloud.and.arrow.down")
+                }
+                .disabled(isWorking)
             }
 
             Section {
@@ -171,14 +380,18 @@ private struct BackupView: View {
                 } label: {
                     Label("Export Backup File", systemImage: "square.and.arrow.up")
                 }
+                .disabled(isWorking)
 
                 Button {
                     showImporter = true
                 } label: {
                     Label("Import Backup File", systemImage: "square.and.arrow.down")
                 }
+                .disabled(isWorking)
+            } header: {
+                Text("File Backup")
             } footer: {
-                Text("Import replaces the current film log on this device with the selected backup file.")
+                Text("File backup keeps a portable JSON copy you can save to Files, AirDrop, Google Drive, or another location.")
             }
 
             if !message.isEmpty {
@@ -189,6 +402,14 @@ private struct BackupView: View {
             }
         }
         .navigationTitle("Settings")
+        .alert("Restore iCloud backup?", isPresented: $showICloudRestoreConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Restore", role: .destructive) {
+                restoreFromICloud()
+            }
+        } message: {
+            Text("This replaces the film log currently on this device with the iCloud backup.")
+        }
         .fileExporter(
             isPresented: $showExporter,
             document: backupDocument,
@@ -211,18 +432,46 @@ private struct BackupView: View {
         }
     }
 
+    private func backUpToICloud() {
+        isWorking = true
+        do {
+            try store.backupToICloud()
+            message = "iCloud backup completed."
+        } catch {
+            message = error.localizedDescription
+        }
+        isWorking = false
+    }
+
+    private func restoreFromICloud() {
+        isWorking = true
+        do {
+            try store.restoreFromICloud()
+            message = "iCloud backup restored."
+        } catch {
+            message = error.localizedDescription
+        }
+        isWorking = false
+    }
+
     private func exportBackup() {
+        isWorking = true
         do {
             backupDocument = FilmLogBackupDocument(data: try store.makePortableBackupData())
             showExporter = true
         } catch {
             message = error.localizedDescription
         }
+        isWorking = false
     }
 
     private func importBackup(_ result: Result<[URL], Error>) {
+        isWorking = true
         do {
-            guard let url = try result.get().first else { return }
+            guard let url = try result.get().first else {
+                isWorking = false
+                return
+            }
             let hasAccess = url.startAccessingSecurityScopedResource()
             defer {
                 if hasAccess {
@@ -234,7 +483,9 @@ private struct BackupView: View {
         } catch {
             message = error.localizedDescription
         }
+        isWorking = false
     }
+
 }
 
 private struct HeaderCard: View {
@@ -317,6 +568,7 @@ private struct RollCard: View {
     let onLoad: () -> Void
     let onFinish: () -> Void
     let onProcess: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
     @State private var photoItems: [PhotosPickerItem] = []
 
@@ -334,7 +586,7 @@ private struct RollCard: View {
                         .font(.title3.weight(.semibold))
                     Text("Roll \(summary.roll.rollNumber) • ISO \(summary.stock.iso) • \(summary.stock.size)")
                         .font(.subheadline)
-                    Text("\(summary.stock.framesPerRoll) frames • Expires \(summary.stock.expiryDate)")
+                    Text("\(summary.stock.framesPerRoll) frames • Expires \(FilmistDates.displayString(from: summary.stock.expiryDate))")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -349,7 +601,11 @@ private struct RollCard: View {
                     .background(Color(.tertiarySystemGroupedBackground), in: Capsule())
             }
 
-            WorkflowDetail(page: page, summary: summary)
+            if let latestLoad = summary.latestLoad, page != .unloaded {
+                Text("Camera: \(latestLoad.cameraBody) + \(latestLoad.lens) • \(FilmistDates.displayString(from: latestLoad.loadedAt))")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
 
             Text(historyText)
                 .font(.caption)
@@ -362,6 +618,8 @@ private struct RollCard: View {
                     case .unloaded:
                         Button("Load roll", action: onLoad)
                             .buttonStyle(.borderedProminent)
+                        Button("Edit", action: onEdit)
+                            .buttonStyle(.bordered)
                     case .loaded:
                         Button("Mark finished", action: onFinish)
                             .buttonStyle(.borderedProminent)
@@ -427,55 +685,9 @@ private struct RollCard: View {
 
     private var historyText: String {
         let items = summary.statusHistory.prefix(3).map {
-            "\($0.changedAt) \($0.status.displayName)"
+            "\(FilmistDates.displayString(from: $0.changedAt)) \($0.status.displayName)"
         }
         return "Recent history: \(items.joined(separator: " • "))"
-    }
-}
-
-private struct WorkflowDetail: View {
-    let page: WorkflowPage
-    let summary: RollSummary
-
-    var body: some View {
-        switch page {
-        case .unloaded:
-            Text("Ready to load into a camera. Once loaded, this roll moves to the loaded page.")
-                .font(.body)
-        case .loaded:
-            Text(loadedDetail)
-                .font(.body)
-        case .finished:
-            VStack(alignment: .leading, spacing: 8) {
-                Text(finishedDetail)
-                    .font(.body)
-                if let latestLoad = summary.latestLoad {
-                    Text("Last camera load: \(latestLoad.cameraBody) with \(latestLoad.lens) on \(latestLoad.loadedAt)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-
-    private var loadedDetail: String {
-        guard let latestLoad = summary.latestLoad else {
-            return "Marked loaded, but no camera load details were saved."
-        }
-        return "Loaded in \(latestLoad.cameraBody) with \(latestLoad.lens) on \(latestLoad.loadedAt)."
-    }
-
-    private var finishedDetail: String {
-        switch summary.currentStatus {
-        case .finished:
-            "This roll is shot and ready to be sent for development."
-        case .inDevelopment:
-            "This roll is currently in development."
-        case .developed:
-            "Development is complete. You can attach photos from this roll."
-        default:
-            summary.currentStatus.displayName
-        }
     }
 }
 
@@ -488,7 +700,7 @@ private struct AddFilmSheet: View {
     @State private var size = "35mm"
     @State private var framesPerRoll = "36"
     @State private var numberOfRolls = "1"
-    @State private var expiryDate = Calendar.current.date(byAdding: .year, value: 1, to: Date()).map(Self.dateString) ?? FilmLogStore.todayString()
+    @State private var expiryDate = Calendar.current.date(byAdding: .year, value: 1, to: Date()) ?? Date()
     @State private var logoItem: PhotosPickerItem?
     @State private var logoData: Data?
 
@@ -511,7 +723,7 @@ private struct AddFilmSheet: View {
                         .keyboardType(.numberPad)
                     TextField("Number of rolls", text: $numberOfRolls)
                         .keyboardType(.numberPad)
-                    TextField("Expiry date (YYYY-MM-DD)", text: $expiryDate)
+                    DatePicker("Expiry date", selection: $expiryDate, displayedComponents: .date)
                 }
 
                 Section {
@@ -583,19 +795,122 @@ private struct AddFilmSheet: View {
                 size: size,
                 framesPerRoll: parsedFrames,
                 numberOfRolls: parsedRolls,
-                expiryDate: expiryDate,
+                expiryDate: FilmistDates.string(from: expiryDate),
                 logoData: logoData
             )
         )
         dismiss()
     }
+}
 
-    private static func dateString(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+private struct EditFilmSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: FilmLogStore
+    let stock: FilmStock
+    @State private var brand: String
+    @State private var model: String
+    @State private var iso: String
+    @State private var size: String
+    @State private var framesPerRoll: String
+    @State private var expiryDate: Date
+    @State private var logoItem: PhotosPickerItem?
+    @State private var logoData: Data?
+
+    private let filmSizeOptions = ["35mm", "120"]
+
+    init(stock: FilmStock) {
+        self.stock = stock
+        _brand = State(initialValue: stock.brand)
+        _model = State(initialValue: stock.model)
+        _iso = State(initialValue: "\(stock.iso)")
+        _size = State(initialValue: stock.size)
+        _framesPerRoll = State(initialValue: "\(stock.framesPerRoll)")
+        _expiryDate = State(initialValue: FilmistDates.date(from: stock.expiryDate))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Brand", text: $brand)
+                    TextField("Model", text: $model)
+                    TextField("ISO", text: $iso)
+                        .keyboardType(.numberPad)
+                    Picker("Film size", selection: $size) {
+                        ForEach(filmSizeOptions, id: \.self) { option in
+                            Text(option).tag(option)
+                        }
+                    }
+                    TextField("Frames per roll", text: $framesPerRoll)
+                        .keyboardType(.numberPad)
+                    DatePicker("Expiry date", selection: $expiryDate, displayedComponents: .date)
+                }
+
+                Section {
+                    PhotosPicker(selection: $logoItem, matching: .images) {
+                        HStack {
+                            Text(logoData == nil ? "Replace logo" : "New logo selected")
+                            Spacer()
+                            Image(systemName: "photo")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Edit film")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                        .disabled(!isValid)
+                }
+            }
+            .onChange(of: logoItem) { _, item in
+                Task {
+                    let data = try? await item?.loadTransferable(type: Data.self)
+                    await MainActor.run {
+                        logoData = data
+                    }
+                }
+            }
+        }
+    }
+
+    private var isValid: Bool {
+        guard
+            !brand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let parsedIso = Int(iso),
+            let parsedFrames = Int(framesPerRoll)
+        else {
+            return false
+        }
+        return parsedIso > 0 && parsedFrames > 0
+    }
+
+    private func save() {
+        guard
+            let parsedIso = Int(iso),
+            let parsedFrames = Int(framesPerRoll)
+        else { return }
+
+        store.updateFilmStock(
+            stockId: stock.id,
+            input: NewFilmStockInput(
+                brand: brand,
+                model: model,
+                iso: parsedIso,
+                size: size,
+                framesPerRoll: parsedFrames,
+                numberOfRolls: stock.numberOfRolls,
+                expiryDate: FilmistDates.string(from: expiryDate),
+                logoData: logoData
+            )
+        )
+        dismiss()
     }
 }
 
@@ -603,23 +918,51 @@ private struct LoadRollSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: FilmLogStore
     let summary: RollSummary
+    @State private var selectedCameraId = ""
     @State private var cameraBody = ""
     @State private var lens = ""
-    @State private var loadedAt = FilmLogStore.todayString()
+    @State private var loadedAt = Date()
 
     var body: some View {
         NavigationStack {
             Form {
+                if !store.cameras.isEmpty {
+                    Section {
+                        Picker("Saved camera", selection: $selectedCameraId) {
+                            Text("Custom").tag("")
+                            ForEach(store.cameras) { camera in
+                                Text(camera.displayName).tag(camera.id.uuidString)
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Text("Record which camera body and lens this unloaded roll is going into.")
                         .foregroundStyle(.secondary)
                     TextField("Camera body", text: $cameraBody)
                     TextField("Lens", text: $lens)
-                    TextField("Loaded date (YYYY-MM-DD)", text: $loadedAt)
+                    DatePicker("Loaded date", selection: $loadedAt, displayedComponents: .date)
+
+                    Button {
+                        if let camera = store.addCamera(cameraBody: cameraBody, lens: lens) {
+                            selectedCameraId = camera.id.uuidString
+                        }
+                    } label: {
+                        Label("Save Camera", systemImage: "camera.badge.ellipsis")
+                    }
+                    .disabled(!canRecord)
                 }
             }
             .navigationTitle("Load \(summary.stock.brand) \(summary.stock.model) roll \(summary.roll.rollNumber)")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: selectedCameraId) { _, cameraId in
+                guard
+                    let camera = store.cameras.first(where: { $0.id.uuidString == cameraId })
+                else { return }
+                cameraBody = camera.cameraBody
+                lens = camera.lens
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -630,14 +973,56 @@ private struct LoadRollSheet: View {
                             rollId: summary.roll.id,
                             cameraBody: cameraBody,
                             lens: lens,
-                            loadedAt: loadedAt
+                            loadedAt: FilmistDates.string(from: loadedAt)
                         )
                         dismiss()
                     }
-                    .disabled(cameraBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || lens.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!canRecord)
                 }
             }
         }
+    }
+
+    private var canRecord: Bool {
+        !cameraBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !lens.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+private struct AddCameraSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var store: FilmLogStore
+    @State private var cameraBody = ""
+    @State private var lens = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Camera body", text: $cameraBody)
+                    TextField("Lens", text: $lens)
+                }
+            }
+            .navigationTitle("Add Camera")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        store.addCamera(cameraBody: cameraBody, lens: lens)
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private var canSave: Bool {
+        !cameraBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !lens.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 }
 
@@ -645,7 +1030,7 @@ private struct FinishRollSheet: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: FilmLogStore
     let summary: RollSummary
-    @State private var finishedAt = FilmLogStore.todayString()
+    @State private var finishedAt = Date()
 
     var body: some View {
         NavigationStack {
@@ -653,7 +1038,7 @@ private struct FinishRollSheet: View {
                 Section {
                     Text("This moves the roll from the loaded page to the finished page.")
                         .foregroundStyle(.secondary)
-                    TextField("Finished date (YYYY-MM-DD)", text: $finishedAt)
+                    DatePicker("Finished date", selection: $finishedAt, displayedComponents: .date)
                 }
             }
             .navigationTitle("Finish roll \(summary.roll.rollNumber)")
@@ -664,7 +1049,7 @@ private struct FinishRollSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Move to finished") {
-                        store.updateRollStatus(rollId: summary.roll.id, status: .finished, changedAt: finishedAt)
+                        store.updateRollStatus(rollId: summary.roll.id, status: .finished, changedAt: FilmistDates.string(from: finishedAt))
                         dismiss()
                     }
                 }
@@ -678,7 +1063,7 @@ private struct ProcessingSheet: View {
     @EnvironmentObject private var store: FilmLogStore
     let summary: RollSummary
     @State private var selectedStatus: FilmStatus
-    @State private var changedAt = FilmLogStore.todayString()
+    @State private var changedAt = Date()
 
     private let availableStatuses: [FilmStatus] = [.finished, .inDevelopment, .developed]
 
@@ -693,7 +1078,7 @@ private struct ProcessingSheet: View {
             Form {
                 Section {
                     Text("Current status: \(summary.currentStatus.displayName)")
-                    TextField("Change date (YYYY-MM-DD)", text: $changedAt)
+                    DatePicker("Change date", selection: $changedAt, displayedComponents: .date)
                 }
 
                 Section {
@@ -713,7 +1098,7 @@ private struct ProcessingSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        store.updateRollStatus(rollId: summary.roll.id, status: selectedStatus, changedAt: changedAt)
+                        store.updateRollStatus(rollId: summary.roll.id, status: selectedStatus, changedAt: FilmistDates.string(from: changedAt))
                         dismiss()
                     }
                 }

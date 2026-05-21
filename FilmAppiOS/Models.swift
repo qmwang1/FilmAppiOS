@@ -121,6 +121,16 @@ struct CameraLoad: Identifiable, Codable, Equatable {
     var loadedAt: String
 }
 
+struct CameraProfile: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var cameraBody: String
+    var lens: String
+
+    var displayName: String {
+        "\(cameraBody) + \(lens)"
+    }
+}
+
 struct PhotoAttachment: Identifiable, Codable, Equatable {
     var id = UUID()
     var rollId: UUID
@@ -133,7 +143,29 @@ struct FilmLogData: Codable, Equatable {
     var rolls: [FilmRoll] = []
     var statusHistory: [RollStatusHistory] = []
     var cameraLoads: [CameraLoad] = []
+    var cameras: [CameraProfile] = []
     var photos: [PhotoAttachment] = []
+
+    enum CodingKeys: String, CodingKey {
+        case stocks
+        case rolls
+        case statusHistory
+        case cameraLoads
+        case cameras
+        case photos
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        stocks = try container.decodeIfPresent([FilmStock].self, forKey: .stocks) ?? []
+        rolls = try container.decodeIfPresent([FilmRoll].self, forKey: .rolls) ?? []
+        statusHistory = try container.decodeIfPresent([RollStatusHistory].self, forKey: .statusHistory) ?? []
+        cameraLoads = try container.decodeIfPresent([CameraLoad].self, forKey: .cameraLoads) ?? []
+        cameras = try container.decodeIfPresent([CameraProfile].self, forKey: .cameras) ?? []
+        photos = try container.decodeIfPresent([PhotoAttachment].self, forKey: .photos) ?? []
+    }
 }
 
 struct RollSummary: Identifiable, Equatable {

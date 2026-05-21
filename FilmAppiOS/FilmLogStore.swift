@@ -2,12 +2,18 @@ import Combine
 import Foundation
 
 enum FilmLogBackupError: LocalizedError {
+    case iCloudUnavailable
     case invalidBackup
+    case noBackupFound
 
     var errorDescription: String? {
         switch self {
+        case .iCloudUnavailable:
+            "iCloud Drive is not available. Check that iCloud is enabled for this app and that you are signed in on this device."
         case .invalidBackup:
-            "This does not look like a valid Film Log backup file."
+            "This does not look like a valid Filmist backup file."
+        case .noBackupFound:
+            "No Filmist iCloud backup was found."
         }
     }
 }
@@ -34,6 +40,15 @@ final class FilmLogStore: ObservableObject {
 
     var stockCount: Int {
         data.stocks.count
+    }
+
+    var cameras: [CameraProfile] {
+        data.cameras.sorted {
+            if $0.cameraBody.localizedCaseInsensitiveCompare($1.cameraBody) == .orderedSame {
+                return $0.lens.localizedCaseInsensitiveCompare($1.lens) == .orderedAscending
+            }
+            return $0.cameraBody.localizedCaseInsensitiveCompare($1.cameraBody) == .orderedAscending
+        }
     }
 
     func rollSummaries(for page: WorkflowPage) -> [RollSummary] {
@@ -85,6 +100,26 @@ final class FilmLogStore: ObservableObject {
         save()
     }
 
+    func updateFilmStock(stockId: UUID, input: NewFilmStockInput) {
+        guard let stockIndex = data.stocks.firstIndex(where: { $0.id == stockId }) else { return }
+
+        let existingLogoFileName = data.stocks[stockIndex].logoFileName
+        data.stocks[stockIndex].brand = input.brand.trimmingCharacters(in: .whitespacesAndNewlines)
+        data.stocks[stockIndex].model = input.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        data.stocks[stockIndex].iso = input.iso
+        data.stocks[stockIndex].size = input.size.trimmingCharacters(in: .whitespacesAndNewlines)
+        data.stocks[stockIndex].framesPerRoll = input.framesPerRoll
+        data.stocks[stockIndex].expiryDate = input.expiryDate.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let logoFileName = saveImageData(input.logoData, prefix: "logo") {
+            data.stocks[stockIndex].logoFileName = logoFileName
+        } else {
+            data.stocks[stockIndex].logoFileName = existingLogoFileName
+        }
+
+        save()
+    }
+
     func deleteRoll(_ rollId: UUID, stockId: UUID) {
         data.rolls.removeAll { $0.id == rollId }
         data.statusHistory.removeAll { $0.rollId == rollId }
@@ -111,6 +146,30 @@ final class FilmLogStore: ObservableObject {
         updateRollStatus(rollId: rollId, status: .loaded, changedAt: loadedAt)
     }
 
+    @discardableResult
+    func addCamera(cameraBody: String, lens: String) -> CameraProfile? {
+        let trimmedBody = cameraBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedLens = lens.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedBody.isEmpty, !trimmedLens.isEmpty else { return nil }
+
+        if let existingCamera = data.cameras.first(where: {
+            $0.cameraBody.caseInsensitiveCompare(trimmedBody) == .orderedSame &&
+                $0.lens.caseInsensitiveCompare(trimmedLens) == .orderedSame
+        }) {
+            return existingCamera
+        }
+
+        let camera = CameraProfile(cameraBody: trimmedBody, lens: trimmedLens)
+        data.cameras.append(camera)
+        save()
+        return camera
+    }
+
+    func deleteCamera(_ cameraId: UUID) {
+        data.cameras.removeAll { $0.id == cameraId }
+        save()
+    }
+
     func updateRollStatus(rollId: UUID, status: FilmStatus, changedAt: String) {
         data.statusHistory.append(
             RollStatusHistory(rollId: rollId, status: status, changedAt: changedAt)
@@ -131,6 +190,36 @@ final class FilmLogStore: ObservableObject {
     func imageURL(fileName: String?) -> URL? {
         guard let fileName else { return nil }
         return imagesDirectory.appendingPathComponent(fileName)
+    }
+
+    var isICloudAvailable: Bool {
+        fileManager.ubiquityIdentityToken != nil && iCloudBackupDirectory != nil
+    }
+
+    var iCloudBackupDate: Date? {
+        guard let backupDataURL = iCloudBackupDataURL else { return nil }
+        return try? fileManager.attributesOfItem(atPath: backupDataURL.path)[.modificationDate] as? Date
+    }
+
+    func backupToICloud() throws {
+        guard let backupDirectory = iCloudBackupDirectory else {
+            throw FilmLogBackupError.iCloudUnavailable
+        }
+
+        let rawData = try makePortableBackupData()
+        try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+        try rawData.write(to: backupDirectory.appendingPathComponent(iCloudBackupFileName), options: .atomic)
+    }
+
+    func restoreFromICloud() throws {
+        guard let backupDataURL = iCloudBackupDataURL else {
+            throw FilmLogBackupError.iCloudUnavailable
+        }
+        guard fileManager.fileExists(atPath: backupDataURL.path) else {
+            throw FilmLogBackupError.noBackupFound
+        }
+
+        try restorePortableBackup(from: Data(contentsOf: backupDataURL))
     }
 
     func makePortableBackupData() throws -> Data {
@@ -162,31 +251,39 @@ final class FilmLogStore: ObservableObject {
     }
 
     private func allRollSummaries() -> [RollSummary] {
-        let historyByRoll = Dictionary(grouping: data.statusHistory, by: \.rollId)
-        let loadsByRoll = Dictionary(grouping: data.cameraLoads, by: \.rollId)
-        let photosByRoll = Dictionary(grouping: data.photos, by: \.rollId)
+        let indexedHistoryByRoll = Dictionary(grouping: data.statusHistory.enumerated(), by: { $0.element.rollId })
+        let indexedLoadsByRoll = Dictionary(grouping: data.cameraLoads.enumerated(), by: { $0.element.rollId })
+        let indexedPhotosByRoll = Dictionary(grouping: data.photos.enumerated(), by: { $0.element.rollId })
 
         return data.stocks.flatMap { stock in
             data.rolls
                 .filter { $0.filmStockId == stock.id }
                 .sorted { $0.rollNumber < $1.rollNumber }
                 .map { roll in
-                    let rollHistory = (historyByRoll[roll.id] ?? [])
+                    let rollHistory = (indexedHistoryByRoll[roll.id] ?? [])
                         .sorted { lhs, rhs in
-                            if lhs.changedAt == rhs.changedAt {
-                                return lhs.id.uuidString > rhs.id.uuidString
+                            if lhs.element.changedAt == rhs.element.changedAt {
+                                return lhs.offset > rhs.offset
                             }
-                            return lhs.changedAt > rhs.changedAt
+                            return lhs.element.changedAt > rhs.element.changedAt
                         }
-                    let latestLoad = (loadsByRoll[roll.id] ?? [])
-                        .max { $0.loadedAt < $1.loadedAt }
-                    let photos = (photosByRoll[roll.id] ?? [])
+                        .map(\.element)
+                    let latestLoad = (indexedLoadsByRoll[roll.id] ?? [])
+                        .max {
+                            if $0.element.loadedAt == $1.element.loadedAt {
+                                return $0.offset < $1.offset
+                            }
+                            return $0.element.loadedAt < $1.element.loadedAt
+                        }?
+                        .element
+                    let photos = (indexedPhotosByRoll[roll.id] ?? [])
                         .sorted { lhs, rhs in
-                            if lhs.addedAt == rhs.addedAt {
-                                return lhs.id.uuidString > rhs.id.uuidString
+                            if lhs.element.addedAt == rhs.element.addedAt {
+                                return lhs.offset > rhs.offset
                             }
-                            return lhs.addedAt > rhs.addedAt
+                            return lhs.element.addedAt > rhs.element.addedAt
                         }
+                        .map(\.element)
 
                     return RollSummary(
                         stock: stock,
@@ -297,6 +394,20 @@ final class FilmLogStore: ObservableObject {
 
     private var dataURL: URL {
         supportDirectory.appendingPathComponent("film-log.json")
+    }
+
+    private var iCloudBackupDirectory: URL? {
+        fileManager.url(forUbiquityContainerIdentifier: nil)?
+            .appendingPathComponent("Documents", isDirectory: true)
+            .appendingPathComponent("FilmLog", isDirectory: true)
+    }
+
+    private var iCloudBackupDataURL: URL? {
+        iCloudBackupDirectory?.appendingPathComponent(iCloudBackupFileName)
+    }
+
+    private var iCloudBackupFileName: String {
+        "FilmLog-iCloud-Backup.json"
     }
 
     static func todayString() -> String {
