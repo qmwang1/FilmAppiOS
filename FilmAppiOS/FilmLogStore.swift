@@ -1,6 +1,24 @@
 import Combine
 import Foundation
 
+enum FilmLogBackupError: LocalizedError {
+    case invalidBackup
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidBackup:
+            "This does not look like a valid Film Log backup file."
+        }
+    }
+}
+
+struct PortableFilmLogBackup: Codable {
+    var version = 1
+    var exportedAt: String
+    var filmLog: FilmLogData
+    var images: [String: Data]
+}
+
 @MainActor
 final class FilmLogStore: ObservableObject {
     @Published private(set) var data = FilmLogData()
@@ -115,6 +133,34 @@ final class FilmLogStore: ObservableObject {
         return imagesDirectory.appendingPathComponent(fileName)
     }
 
+    func makePortableBackupData() throws -> Data {
+        save()
+        let backup = PortableFilmLogBackup(
+            exportedAt: Self.timestampString(),
+            filmLog: data,
+            images: try collectImageData()
+        )
+        return try encoder.encode(backup)
+    }
+
+    func restorePortableBackup(from rawData: Data) throws {
+        let backup = try decoder.decode(PortableFilmLogBackup.self, from: rawData)
+        guard backup.version == 1 else {
+            throw FilmLogBackupError.invalidBackup
+        }
+
+        if fileManager.fileExists(atPath: imagesDirectory.path) {
+            try fileManager.removeItem(at: imagesDirectory)
+        }
+        try fileManager.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
+        for (fileName, imageData) in backup.images {
+            try imageData.write(to: imagesDirectory.appendingPathComponent(fileName), options: .atomic)
+        }
+
+        data = backup.filmLog
+        save()
+    }
+
     private func allRollSummaries() -> [RollSummary] {
         let historyByRoll = Dictionary(grouping: data.statusHistory, by: \.rollId)
         let loadsByRoll = Dictionary(grouping: data.cameraLoads, by: \.rollId)
@@ -222,6 +268,24 @@ final class FilmLogStore: ObservableObject {
         }
     }
 
+    private func collectImageData() throws -> [String: Data] {
+        guard fileManager.fileExists(atPath: imagesDirectory.path) else {
+            return [:]
+        }
+
+        let imageURLs = try fileManager.contentsOfDirectory(
+            at: imagesDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey]
+        )
+        var images: [String: Data] = [:]
+        for url in imageURLs {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else { continue }
+            images[url.lastPathComponent] = try Data(contentsOf: url)
+        }
+        return images
+    }
+
     private var supportDirectory: URL {
         fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("FilmLog", isDirectory: true)
@@ -240,6 +304,14 @@ final class FilmLogStore: ObservableObject {
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    static func timestampString() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter.string(from: Date())
     }
 }

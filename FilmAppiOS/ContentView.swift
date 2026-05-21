@@ -1,10 +1,16 @@
 import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+
+private enum AppTab: Hashable {
+    case workflow(WorkflowPage)
+    case settings
+}
 
 struct ContentView: View {
     @EnvironmentObject private var store: FilmLogStore
-    @State private var selectedPage: WorkflowPage = .unloaded
+    @State private var selectedTab: AppTab = .workflow(.unloaded)
     @State private var showAddFilm = false
     @State private var loadingRoll: RollSummary?
     @State private var finishingRoll: RollSummary?
@@ -14,7 +20,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
-                TabView(selection: $selectedPage) {
+                TabView(selection: $selectedTab) {
                     ForEach(WorkflowPage.allCases) { page in
                         WorkflowList(
                             page: page,
@@ -23,27 +29,35 @@ struct ContentView: View {
                             processingRoll: $processingRoll,
                             deletingRoll: $deletingRoll
                         )
-                        .tag(page)
+                        .tag(AppTab.workflow(page))
                         .tabItem {
                             Label(page.tabTitle, systemImage: iconName(for: page))
                         }
                         .badge(store.count(for: page))
                     }
+
+                    BackupView()
+                        .tag(AppTab.settings)
+                        .tabItem {
+                            Label("Settings", systemImage: "externaldrive")
+                        }
                 }
 
-                Button {
-                    showAddFilm = true
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 58, height: 58)
-                        .background(Circle().fill(Color.accentColor))
-                        .shadow(radius: 10, y: 4)
+                if case .workflow = selectedTab {
+                    Button {
+                        showAddFilm = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 58, height: 58)
+                            .background(Circle().fill(Color.accentColor))
+                            .shadow(radius: 10, y: 4)
+                    }
+                    .accessibilityLabel("Add film stock")
+                    .padding(.trailing, 22)
+                    .padding(.bottom, 64)
                 }
-                .accessibilityLabel("Add film stock")
-                .padding(.trailing, 22)
-                .padding(.bottom, 64)
             }
             .navigationTitle("Film Log")
         }
@@ -131,6 +145,95 @@ private struct WorkflowList: View {
             .padding(.bottom, 96)
         }
         .background(Color(.systemGroupedBackground))
+    }
+}
+
+private struct BackupView: View {
+    @EnvironmentObject private var store: FilmLogStore
+    @State private var message = ""
+    @State private var backupDocument = FilmLogBackupDocument()
+    @State private var showExporter = false
+    @State private var showImporter = false
+
+    var body: some View {
+        List {
+            Section {
+                Label("No Apple iCloud capability required", systemImage: "checkmark.circle")
+            } header: {
+                Text("Backup")
+            } footer: {
+                Text("Export creates one backup file containing the film log, logos, and attached photos. Save it to iCloud Drive, Files, AirDrop, or another location.")
+            }
+
+            Section {
+                Button {
+                    exportBackup()
+                } label: {
+                    Label("Export Backup File", systemImage: "square.and.arrow.up")
+                }
+
+                Button {
+                    showImporter = true
+                } label: {
+                    Label("Import Backup File", systemImage: "square.and.arrow.down")
+                }
+            } footer: {
+                Text("Import replaces the current film log on this device with the selected backup file.")
+            }
+
+            if !message.isEmpty {
+                Section {
+                    Text(message)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Settings")
+        .fileExporter(
+            isPresented: $showExporter,
+            document: backupDocument,
+            contentType: .json,
+            defaultFilename: "FilmLog-Backup-\(FilmLogStore.todayString()).json"
+        ) { result in
+            switch result {
+            case .success:
+                message = "Backup file exported."
+            case .failure(let error):
+                message = error.localizedDescription
+            }
+        }
+        .fileImporter(
+            isPresented: $showImporter,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            importBackup(result)
+        }
+    }
+
+    private func exportBackup() {
+        do {
+            backupDocument = FilmLogBackupDocument(data: try store.makePortableBackupData())
+            showExporter = true
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func importBackup(_ result: Result<[URL], Error>) {
+        do {
+            guard let url = try result.get().first else { return }
+            let hasAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasAccess {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+            try store.restorePortableBackup(from: Data(contentsOf: url))
+            message = "Backup file imported."
+        } catch {
+            message = error.localizedDescription
+        }
     }
 }
 

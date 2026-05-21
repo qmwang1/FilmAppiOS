@@ -25,7 +25,7 @@ enum FilmStatus: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-enum WorkflowPage: String, CaseIterable, Identifiable {
+enum WorkflowPage: String, CaseIterable, Hashable, Identifiable {
     case unloaded
     case loaded
     case finished

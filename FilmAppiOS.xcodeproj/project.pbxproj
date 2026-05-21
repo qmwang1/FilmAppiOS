@@ -12,6 +12,7 @@
 		0A0000052C00000000000001 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A0000062C00000000000001 /* Models.swift */; };
 		0A0000072C00000000000001 /* FilmLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A0000082C00000000000001 /* FilmLogStore.swift */; };
 		0A0000092C00000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A00000A2C00000000000001 /* Assets.xcassets */; };
+		0A00001C2C00000000000001 /* BackupDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A00001B2C00000000000001 /* BackupDocument.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -21,6 +22,7 @@
 		0A0000082C00000000000001 /* FilmLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilmLogStore.swift; sourceTree = "<group>"; };
 		0A00000A2C00000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0A00000B2C00000000000001 /* FilmAppiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FilmAppiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0A00001B2C00000000000001 /* BackupDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupDocument.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,6 +51,7 @@
 				0A0000042C00000000000001 /* ContentView.swift */,
 				0A0000062C00000000000001 /* Models.swift */,
 				0A0000082C00000000000001 /* FilmLogStore.swift */,
+				0A00001B2C00000000000001 /* BackupDocument.swift */,
 				0A00000A2C00000000000001 /* Assets.xcassets */,
 			);
 			path = FilmAppiOS;
@@ -135,6 +138,7 @@
 				0A0000032C00000000000001 /* ContentView.swift in Sources */,
 				0A0000052C00000000000001 /* Models.swift in Sources */,
 				0A0000072C00000000000001 /* FilmLogStore.swift in Sources */,
+				0A00001C2C00000000000001 /* BackupDocument.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -263,7 +267,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = AJCU9HC4FC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Film Log";
@@ -292,7 +296,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = AJCU9HC4FC;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Film Log";
@@ -317,20 +321,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		0A0000152C00000000000001 /* Build configuration list for PBXProject "FilmAppiOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0A0000162C00000000000001 /* Debug */,
-				0A0000172C00000000000001 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		0A0000112C00000000000001 /* Build configuration list for PBXNativeTarget "FilmAppiOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				0A0000182C00000000000001 /* Debug */,
 				0A0000192C00000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		0A0000152C00000000000001 /* Build configuration list for PBXProject "FilmAppiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0A0000162C00000000000001 /* Debug */,
+				0A0000172C00000000000001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
