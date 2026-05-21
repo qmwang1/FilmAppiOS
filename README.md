@@ -6,7 +6,7 @@ Native SwiftUI version of the Android Filmist app.
 
 Filmist is a film photography log app for tracking film stocks, rolls, cameras, development status, backups, and attached photos.
 
-For app support, bug reports, feedback, or feature requests, please open an issue in this GitHub repository. Include your iPhone model, iOS version, app version, and a short description of what happened.
+For app support, bug reports, feedback, or feature requests, please open an issue in this GitHub repository or email jy_wqm@hotmail.com. Include your iPhone model, iOS version, app version, and a short description of what happened.
 
 If you need help with backup, restore, iCloud sync, importing a backup file, adding film, loading a roll, editing film, or attaching photos, create a GitHub issue and describe the screen or workflow where you need help.
 
